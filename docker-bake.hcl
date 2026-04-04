@@ -61,6 +61,19 @@ target "_cu130" {
     }
 }
 
+target "_cu124" {
+    inherits = ["_common"]
+    args = {
+        BASE_IMAGE         = "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+        CUDA_VERSION       = "cu124"
+    }
+}
+
+target "base-12-4" {
+    inherits = ["_cu124"]
+    tags = tag("base", "cu124")
+}
+
 target "base-12-6" {
     inherits = ["_cu126"]
     tags = tag("base", "cu126")

@@ -16,7 +16,7 @@
 
 ### Tag Structure
 
-* `cu126`, `cu128`, `cu130`: CUDA version (12.6 / 12.8 / 13.0)
+* `cu124`, `cu126`, `cu128`, `cu130`: CUDA version (12.4 / 12.6 / 12.8 / 13.0)
 
 ---
 
@@ -24,6 +24,7 @@
 
 | Image Name | CUDA |
 | ---------- | ---- |
+| `ghcr.io/n3k00oo/ollama-open-webui-rp:base-torch2.11.0-cu124` | 12.4 |
 | `ghcr.io/n3k00oo/ollama-open-webui-rp:base-torch2.11.0-cu126` | 12.6 |
 | `ghcr.io/n3k00oo/ollama-open-webui-rp:base-torch2.11.0-cu128` | 12.8 |
 | `ghcr.io/n3k00oo/ollama-open-webui-rp:base-torch2.11.0-cu130` | 13.0 |
@@ -78,7 +79,7 @@ To set: **Edit Pod/Template** -> **Add Environment Variable** (key/value).
 * **OS**: Ubuntu 22.04
 * **Python**: 3.11
 * **Framework**: llama.cpp + Open WebUI + JupyterLab
-* **Libraries**: PyTorch 2.11.0, CUDA (12.6-13.0), Triton, [hf_hub](https://huggingface.co/docs/huggingface_hub), [nvtop](https://github.com/Syllo/nvtop)
+* **Libraries**: PyTorch 2.11.0, CUDA (12.4-13.0), Triton, [hf_hub](https://huggingface.co/docs/huggingface_hub), [nvtop](https://github.com/Syllo/nvtop)
 
 ---
 
