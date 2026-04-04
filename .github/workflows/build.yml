@@ -9,13 +9,17 @@ on:
       - '.github/workflows/build.yml'
       - 'docker-bake.hcl'
       - 'Dockerfile'
+      - 'proxy/**'
       - 'scripts/**'
+      - 'README.md'
   pull_request:
     paths:
       - '.github/workflows/build.yml'
       - 'docker-bake.hcl'
       - 'Dockerfile'
+      - 'proxy/**'
       - 'scripts/**'
+      - 'README.md'
   schedule:
     # GitHub cron is calendar-based, so this runs at 00:00 UTC every 5th day-of-month step.
     - cron: "0 0 */5 * *"
@@ -25,16 +29,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bake:
+  smoke:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [base]
-        cuda: [12-4, 12-5, 12-6, 12-8, 13-0]
+    outputs:
+      image_repo: ${{ steps.image.outputs.repo }}
+      smoke_repo: ${{ steps.image.outputs.smoke_repo }}
+      llama_cpp: ${{ steps.versions.outputs.llama_cpp }}
+      open_webui: ${{ steps.versions.outputs.open_webui }}
+      torch: ${{ steps.versions.outputs.torch }}
     steps:
       - name: Maximize build space
         uses: AdityaGarg8/remove-unwanted-software@v5
@@ -54,10 +58,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Compute GHCR image repository
+      - name: Compute image repositories
         id: image
         shell: bash
-        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "smoke_repo=llama-open-webui-smoke" >> "$GITHUB_OUTPUT"
 
       - name: Resolve latest upstream versions
         id: versions
@@ -95,6 +101,59 @@ jobs:
           echo "Resolved Open WebUI ${open_webui_version}"
           echo "Resolved PyTorch ${torch_version}"
 
+      - name: Build smoke image
+        uses: docker/bake-action@v7
+        env:
+          IMAGE_REPO_NAME: ${{ steps.image.outputs.smoke_repo }}
+        with:
+          source: .
+          pull: true
+          load: true
+          targets: base-12-6
+          set: |
+            *.args.LLAMA_CPP_VERSION=${{ steps.versions.outputs.llama_cpp }}
+            *.args.OPEN_WEBUI_VERSION=${{ steps.versions.outputs.open_webui }}
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+
+      - name: Run smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          smoke_image="${{ steps.image.outputs.smoke_repo }}:base-torch${{ steps.versions.outputs.torch }}-cu126"
+          docker run --rm --entrypoint /opt/llama-open-webui/scripts/ci_smoke.sh "${smoke_image}"
+
+  bake:
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [base]
+        cuda: [12-4, 12-5, 12-6, 12-8, 13-0]
+    steps:
+      - name: Maximize build space
+        uses: AdityaGarg8/remove-unwanted-software@v5
+        with:
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          remove-large-packages: 'true'
+          remove-cached-tools: 'true'
+          remove-swapfile: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -106,15 +165,15 @@ jobs:
       - name: Build and push
         uses: docker/bake-action@v7
         env:
-          IMAGE_REPO_NAME: ${{ steps.image.outputs.repo }}
+          IMAGE_REPO_NAME: ${{ needs.smoke.outputs.image_repo }}
         with:
           source: .
           pull: true
           targets: ${{ matrix.target }}-${{ matrix.cuda }}
           push: ${{ github.event_name != 'pull_request' }}
           set: |
-            *.args.LLAMA_CPP_VERSION=${{ steps.versions.outputs.llama_cpp }}
-            *.args.OPEN_WEBUI_VERSION=${{ steps.versions.outputs.open_webui }}
+            *.args.LLAMA_CPP_VERSION=${{ needs.smoke.outputs.llama_cpp }}
+            *.args.OPEN_WEBUI_VERSION=${{ needs.smoke.outputs.open_webui }}
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
@@ -126,7 +185,7 @@ jobs:
 
           cuda_tag="cu${{ matrix.cuda }}"
           cuda_tag="${cuda_tag//-/}"
-          image_ref="${{ steps.image.outputs.repo }}:base-torch${{ steps.versions.outputs.torch }}-${cuda_tag}"
+          image_ref="${{ needs.smoke.outputs.image_repo }}:base-torch${{ needs.smoke.outputs.torch }}-${cuda_tag}"
 
           docker buildx imagetools inspect "${image_ref}" > /dev/null
           echo "Verified ${image_ref}"

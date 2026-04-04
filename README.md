@@ -8,7 +8,7 @@ This image is a llama-only RunPod base image:
 - Open WebUI is wired to the local OpenAI-compatible `/v1` endpoint
 - JupyterLab is included for notebook and terminal access
 
-GitHub Actions refreshes upstream `llama.cpp` and Open WebUI versions at build time, pushes the images to GHCR, and verifies each published tag before the workflow passes.
+GitHub Actions refreshes upstream `llama.cpp` and Open WebUI versions at build time, runs a container smoke test for the launcher and proxy, pushes the images to GHCR, and verifies each published tag before the workflow passes.
 
 ## Images
 
@@ -36,7 +36,7 @@ ghcr.io/n3k00oo/llama-open-webui:base-torch2.11.0-cu128
 
 ## Runtime
 
-`llama-server` listens on internal port `11434` and Open WebUI connects to:
+`llama-server` binds to `127.0.0.1:11434` and Open WebUI connects to:
 
 ```text
 http://127.0.0.1:11434/v1
@@ -51,10 +51,16 @@ Place GGUF models in:
 Startup behavior:
 
 - configured Hugging Face and `wget` downloads run before `llama-server` starts, so the pod does not need a second boot
-- if there is exactly one non-mmproj `*.gguf` file anywhere under `/workspace/models`, it is auto-detected
-- if there is exactly one `*mmproj*.gguf` file anywhere under `/workspace/models`, it is passed as `--mmproj`
-- if there are multiple model files, split shards, or non-standard mmproj names, set `LLAMA_MODEL` and `LLAMA_MMPROJ` explicitly
+- startup blocks known-unsafe GPUs such as V100 / compute capability `7.0` unless `LLAMA_ALLOW_UNSUPPORTED_GPU=True`
+- `llama-server` is always launched on `127.0.0.1:11434`, never on `8080`
+- if there is exactly one non-mmproj `*.gguf` file anywhere under `/workspace/models`, it is used as the explicit `--model`
+- if there is exactly one `*mmproj*.gguf` file anywhere under `/workspace/models`, it is used as the explicit `--mmproj`
+- `LLAMA_ALIAS` is always passed explicitly; if unset, it is derived from the resolved GGUF filename
+- if `LLAMA_MULTIMODAL_REQUIRED=True`, startup fails unless `LLAMA_MMPROJ` resolves to a real file
+- the launcher waits for `/v1/models` to become ready and treats HTTP `503 Loading model` as startup-in-progress
+- if `llama-server` exits unexpectedly, the supervisor restarts it and keeps appending to `/workspace/logs/llama-server.log`
 - Open WebUI uses the local llama.cpp endpoint
+- the public Open WebUI proxy on `8081` is WebSocket-safe and preserves real upstream API failure codes
 
 ## Exposed Ports
 
@@ -74,12 +80,18 @@ Startup behavior:
 | `START_LLAMA_SERVER` | Starts `./llama-server` on boot | `True` |
 | `LLAMA_MODEL` | Absolute path to the GGUF file to load | auto-detect |
 | `LLAMA_MMPROJ` | Absolute path to the mmproj GGUF file | auto-detect |
+| `LLAMA_MULTIMODAL_REQUIRED` | Treat missing mmproj as a startup error | `False` |
 | `LLAMA_ALIAS` | Model name exposed by `/v1/models` | GGUF filename |
 | `LLAMA_CTX_SIZE` | Value passed to `--ctx-size` | `4096` |
 | `LLAMA_GPU_LAYERS` | Value passed to `--n-gpu-layers` | `999` |
 | `LLAMA_PARALLEL` | Value passed to `--parallel` | `1` |
+| `LLAMA_ALLOW_UNSUPPORTED_GPU` | Overrides the default V100 / compute capability `7.0` block | `False` |
 | `LLAMA_SERVER_API_KEY` | Optional API key for `llama-server` | unset |
-| `LLAMA_SERVER_EXTRA_ARGS` | Extra flags appended to `llama-server` | unset |
+| `LLAMA_SERVER_EXTRA_ARGS` | Extra flags appended to `llama-server`. Do not use this for host, port, model, alias, or mmproj. | unset |
+| `LLAMA_READY_TIMEOUT` | Seconds to wait for `/v1/models` readiness per launch attempt | `600` |
+| `LLAMA_READY_POLL_INTERVAL` | Seconds between readiness probes | `2` |
+| `LLAMA_MAX_RESTARTS` | Restart attempts after an unexpected `llama-server` exit | `3` |
+| `LLAMA_RESTART_DELAY` | Seconds to wait before restarting `llama-server` | `5` |
 | `HF_TOKEN` | Hugging Face token for gated or private downloads | unset |
 | `HF_REPO_DOWNLOAD` | Full Hugging Face repo to sync into `/workspace/models/<owner>/<repo>` | unset |
 | `HF_REPO_REVISION` | Optional branch, tag, or commit for `HF_REPO_DOWNLOAD` | latest |
@@ -101,11 +113,15 @@ Startup behavior:
 | `MODEL_DOWNLOAD_FORCE` | Re-download Hugging Face files and overwrite existing `wget` targets | `False` |
 | `DATA_DIR` | Open WebUI data directory | `/workspace/data` |
 | `WEBUI_AUTH` | Enables Open WebUI auth | `False` |
+| `WEBUI_URL` | Public Open WebUI URL used for RunPod access | unset |
+| `CORS_ALLOW_ORIGIN` | Semicolon-separated CORS allowlist. If unset and `WEBUI_URL` is set, it defaults to `WEBUI_URL`. | unset |
 | `RESET_CONFIG_ON_START` | Re-applies provider config on startup | `True` |
 
 Set variables in RunPod under `Edit Pod/Template` > `Add Environment Variable`.
 
 If `WEBUI_AUTH=False` does not take effect, clear the existing Open WebUI data volume first. Open WebUI keeps auth state in its database after first boot.
+
+If you use a RunPod public URL, set `WEBUI_URL` to that exact URL. If users access the pod by multiple public addresses, set `CORS_ALLOW_ORIGIN` to a semicolon-separated allowlist that includes every valid origin.
 
 ### Boot-Time Download Examples
 
@@ -144,6 +160,8 @@ If a repo contains multiple quants or shards, set `LLAMA_MODEL` to the exact fil
 | JupyterLab | `/workspace/logs/jupyterlab.log` |
 | llama.cpp | `/workspace/logs/llama-server.log` |
 | Open WebUI | `/workspace/logs/open-webui.log` |
+| Nginx access | `/workspace/logs/nginx-access.log` |
+| Nginx error | `/workspace/logs/nginx-error.log` |
 
 ## Included Software
 

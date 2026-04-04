@@ -81,10 +81,11 @@ COPY proxy/nginx.conf /etc/nginx/nginx.conf
 COPY proxy/readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
+COPY scripts /opt/llama-open-webui/scripts
 COPY scripts/start.sh /
 COPY scripts/pre_start.sh /
 COPY scripts/post_start.sh /
-RUN chmod +x /start.sh /pre_start.sh /post_start.sh
+RUN chmod +x /start.sh /pre_start.sh /post_start.sh /opt/llama-open-webui/scripts/*.sh
 
 COPY logo/runpod.txt /etc/runpod.txt
 RUN echo 'cat /etc/runpod.txt' >> /root/.bashrc
