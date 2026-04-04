@@ -1,5 +1,5 @@
 variable "IMAGE_REPO_NAME" {
-    default = "ghcr.io/n3k00oo/ollama-open-webui-rp"
+    default = "ghcr.io/n3k00oo/llama-open-webui"
 }
 
 variable "PYTHON_VERSION" {

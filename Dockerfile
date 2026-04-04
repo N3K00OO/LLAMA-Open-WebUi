@@ -41,7 +41,6 @@ ENV SHELL=/bin/bash \
     LLAMA_GPU_LAYERS=999 \
     LLAMA_PARALLEL=1 \
     RESET_CONFIG_ON_START=True \
-    ENABLE_OLLAMA_API=False \
     ENABLE_OPENAI_API=True \
     OPENAI_API_BASE_URL=http://127.0.0.1:11434/v1 \
     OPENAI_API_KEY=sk-no-key-required \
