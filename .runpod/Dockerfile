@@ -7,5 +7,6 @@ ENV PYTHONUNBUFFERED=1
 RUN pip install --no-cache-dir "runpod>=1.7,<2"
 
 COPY .runpod/handler.py /handler.py
+COPY .runpod/ci_smoke.py /ci_smoke.py
 
 CMD ["python", "/handler.py"]

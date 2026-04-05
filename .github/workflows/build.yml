@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - '.github/workflows/build.yml'
+      - '.runpod/**'
       - 'docker-bake.hcl'
       - 'Dockerfile'
       - 'proxy/**'
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/build.yml'
+      - '.runpod/**'
       - 'docker-bake.hcl'
       - 'Dockerfile'
       - 'proxy/**'
@@ -29,7 +31,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runpod-hub-smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build RunPod Hub image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f .runpod/Dockerfile . -t runpod-hub-smoke
+
+      - name: Validate handler contract in container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python runpod-hub-smoke /ci_smoke.py
+
+      - name: Verify worker process stays up
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cid="$(docker run -d runpod-hub-smoke)"
+          trap 'docker rm -f "${cid}" >/dev/null 2>&1 || true' EXIT
+
+          sleep 10
+          status="$(docker inspect -f '{{.State.Status}}' "${cid}")"
+
+          if [ "${status}" != "running" ]; then
+            docker logs "${cid}" || true
+            echo "RunPod Hub worker exited before smoke verification completed."
+            exit 1
+          fi
+
+          docker logs "${cid}" || true
+
   smoke:
+    needs: runpod-hub-smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read
