@@ -1,4 +1,5 @@
 [![Build and Publish GHCR Images](https://github.com/N3K00OO/LLAMA-Open-WebUi/actions/workflows/build.yml/badge.svg)](https://github.com/N3K00OO/LLAMA-Open-WebUi/actions/workflows/build.yml)
+[![Runpod](https://api.runpod.io/badge/N3K00OO/LLAMA-Open-WebUi)](https://console.runpod.io/hub/N3K00OO/LLAMA-Open-WebUi)
 
 # LLAMA Open WebUI
 

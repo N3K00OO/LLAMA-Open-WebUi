@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "name": "health",
+      "input": {
+        "action": "health"
+      },
+      "timeout": 10000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1
+  }
+}

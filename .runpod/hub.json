@@ -1,0 +1,12 @@
+{
+  "title": "LLAMA Open WebUI",
+  "description": "Fork of somb1/Ollama-Open-WebUI-RP, reworked into a llama.cpp-focused project. This Hub package is a lightweight compatibility worker; the full Pod image is published on GHCR.",
+  "type": "serverless",
+  "category": "language",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 10,
+    "gpuCount": 1,
+    "gpuIds": "ADA_24"
+  }
+}
