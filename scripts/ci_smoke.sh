@@ -39,12 +39,18 @@ assert_file_not_contains() {
 
 TEST_TMP="$(mktemp -d)"
 FAKE_SERVER_PID=""
+HEADER_ECHO_PID=""
 ORIGINAL_PATH="${PATH}"
 
 cleanup() {
   if [ -n "${FAKE_SERVER_PID}" ] && kill -0 "${FAKE_SERVER_PID}" 2>/dev/null; then
     kill "${FAKE_SERVER_PID}" 2>/dev/null || true
     wait "${FAKE_SERVER_PID}" 2>/dev/null || true
+  fi
+
+  if [ -n "${HEADER_ECHO_PID}" ] && kill -0 "${HEADER_ECHO_PID}" 2>/dev/null; then
+    kill "${HEADER_ECHO_PID}" 2>/dev/null || true
+    wait "${HEADER_ECHO_PID}" 2>/dev/null || true
   fi
 
   nginx -s stop >/dev/null 2>&1 || true
@@ -111,6 +117,55 @@ PY
   FAKE_SERVER_PID="$!"
 }
 
+start_header_echo_server() {
+  local port="$1"
+
+  cat > "${TEST_TMP}/header_echo_server.py" <<'PY'
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = json.dumps(
+            {
+                "path": self.path,
+                "headers": {k.lower(): v for k, v in self.headers.items()},
+            }
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
+
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+PY
+
+  python "${TEST_TMP}/header_echo_server.py" "${port}" &
+  HEADER_ECHO_PID="$!"
+}
+
+json_header_value() {
+  local json_file="$1"
+  local header_name="$2"
+
+  python - "${json_file}" "${header_name}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+print(payload["headers"].get(sys.argv[2].lower(), ""))
+PY
+}
+
 check_proxy_status() {
   local url="$1"
   local expected_status="$2"
@@ -128,6 +183,33 @@ check_proxy_status() {
   assert_file_not_contains "${body_file}" "<!DOCTYPE" "Proxy path should preserve upstream API semantics for ${url}"
 
   rm -f "${headers_file}" "${body_file}"
+}
+
+assert_proxy_header_forwarding() {
+  local url="$1"
+  local expected_host="$2"
+  local expected_proto="$3"
+  local response_file=""
+  local status_code=""
+
+  response_file="$(mktemp)"
+  status_code="$(
+    curl -sS \
+      -o "${response_file}" \
+      -w '%{http_code}' \
+      -H 'Host: 100.65.23.73:60311' \
+      -H "Origin: ${expected_proto}://${expected_host}" \
+      -H 'Connection: Upgrade' \
+      -H 'Upgrade: websocket' \
+      "${url}"
+  )"
+
+  assert_eq "200" "${status_code}" "Expected proxy header echo to succeed for ${url}"
+  assert_eq "${expected_host}" "$(json_header_value "${response_file}" host)" "Proxy should preserve the public host for ${url}"
+  assert_eq "${expected_host}" "$(json_header_value "${response_file}" x-forwarded-host)" "Proxy should set X-Forwarded-Host for ${url}"
+  assert_eq "${expected_proto}" "$(json_header_value "${response_file}" x-forwarded-proto)" "Proxy should set X-Forwarded-Proto for ${url}"
+
+  rm -f "${response_file}"
 }
 
 mkdir -p /workspace/logs /workspace/models /workspace/data
@@ -210,5 +292,9 @@ nginx
 sleep 1
 check_proxy_status "http://127.0.0.1:8081/api/models" "502"
 check_proxy_status "http://127.0.0.1:11435/v1/models" "502"
+
+start_header_echo_server 8080
+sleep 1
+assert_proxy_header_forwarding "http://127.0.0.1:8081/ws/socket.io/?EIO=4&transport=websocket" "w5k9x3yhywnmen-8081.proxy.runpod.net" "https"
 
 echo "Smoke checks passed."

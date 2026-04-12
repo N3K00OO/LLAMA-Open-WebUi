@@ -760,9 +760,9 @@ check_openwebui_socketio_failures() {
     return 1
   fi
 
-  matches="$(grep -cE '/ws/socket\.io/.* 400|socket\.io.* 400' "${excerpt_file}" || true)"
+  matches="$(grep -cE '/ws/socket\.io/.* (400|403)|socket\.io.* (400|403)|not an accepted origin' "${excerpt_file}" || true)"
   if [ "${matches}" -ge "${threshold}" ]; then
-    log "Detected repeated /ws/socket.io 400 failures. Check WEBUI_URL, CORS_ALLOW_ORIGIN, and the bundled proxy WebSocket headers."
+    log "Detected repeated Open WebUI socket failures. Check WEBUI_URL, CORS_ALLOW_ORIGIN, and the bundled proxy Host/X-Forwarded-* WebSocket headers."
     return 0
   fi
 
